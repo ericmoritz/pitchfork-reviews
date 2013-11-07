@@ -11,6 +11,8 @@ import Control.Lens
 import Data.Maybe (listToMaybe, fromMaybe)
 import Data.List (sortBy, filter, intercalate)
 import Control.Concurrent.Async (mapConcurrently)
+import System.Environment (getArgs)
+
 
 data Album = Album {
   _artist :: String,
@@ -36,10 +38,11 @@ albumScore :: ArrowXml a => a XmlTree (Maybe Float)
 albumScore = css "span.score" //> getText >>> arr readMaybe
 
 
-downloadAlbums = 
+downloadAlbums :: Int -> IO [Album]
+downloadAlbums page = 
   runX $ index_doc >>> album_li_tags >>> album
   where
-    index_doc = fromUrl "http://pitchfork.com/reviews/albums/"
+    index_doc = fromUrl $ "http://pitchfork.com/reviews/albums/" ++ show page ++ "/"
     album_li_tags = css "ul.object-grid ul li"
 
 
@@ -53,7 +56,7 @@ setScore :: Maybe Float -> Album -> Album
 setScore = set score
 
 main = do
-  albums <- downloadAlbums
+  albums <- downloadAlbums =<< pageOpt
   -- Fetch the scores concurrently using async
   scores <- mapConcurrently downloadScoreForAlbum albums
 
@@ -63,6 +66,12 @@ main = do
     filter (scoreGT 7) $
     zipWith setScore scores albums
   where
+    pageOpt = do
+      args <- getArgs
+      return $ fromMaybe 1 $ case args of
+        [x] -> readMaybe x
+        _   -> Nothing
+      
     downloadScoreForAlbum a = downloadScore (a^.url)
     compareScore b a = compare (a^.score) (b^.score)
     scoreGT n a = a^.score > Just n
