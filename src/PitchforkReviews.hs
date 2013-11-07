@@ -32,8 +32,8 @@ album = proc li -> do
   returnA -< Album artist title Nothing $ "http://pitchfork.com" ++ url
 
 
-album_score :: ArrowXml a => a XmlTree (Maybe Float)
-album_score = css "span.score" //> getText >>> arr readMaybe
+albumScore :: ArrowXml a => a XmlTree (Maybe Float)
+albumScore = css "span.score" //> getText >>> arr readMaybe
 
 
 downloadAlbums = 
@@ -44,25 +44,26 @@ downloadAlbums =
 
 
 downloadScore :: String -> IO (Maybe Float)
-downloadScore url = do
-  (return . join . listToMaybe) =<< (runX $ album_doc >>> album_score) 
+downloadScore url = 
+  (join . listToMaybe) `liftM` runX (album_doc >>> albumScore) 
   where
-    album_doc = fromUrl $ url
+    album_doc = fromUrl url
 
-setScore :: (Maybe Float) -> Album -> Album
+setScore :: Maybe Float -> Album -> Album
 setScore = set score
 
-
 main = do
-  -- Fetch the scores concurrently using parallel-io
-  albums <- mapConcurrently updateScore =<< downloadAlbums
+  albums <- downloadAlbums
+  -- Fetch the scores concurrently using async
+  scores <- mapConcurrently downloadScoreForAlbum albums
 
-  -- Sort and filter the albums
-  display $ sortAndFilter 7 albums
+  -- Join the albums with what we fetched concurrently,
+  -- filter by the minimal score and then sort on the score
+  display $ sortBy compareScore $
+    filter (scoreGT 7) $
+    zipWith setScore scores albums
   where
-    updateScore album = do
-      score' <- (downloadScore $ album^.url)
-      return $ setScore score' album
-    sortAndFilter n = sortBy (\b a -> compare (a^.score) (b^.score)) .
-                    filter (\a -> a^.score > Just n)
-    display = mapM_ (putStrLn . show)
+    downloadScoreForAlbum a = downloadScore (a^.url)
+    compareScore b a = compare (a^.score) (b^.score)
+    scoreGT n a = a^.score > Just n
+    display = mapM_ print
