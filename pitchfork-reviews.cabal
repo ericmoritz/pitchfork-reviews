@@ -16,12 +16,11 @@ cabal-version:       >=1.8
 
 executable pitchfork-reviews
   main-is:             PitchforkReviews.hs
-  ghc-options: -threaded -rtsopts
   -- other-modules:       
   build-depends:       base ==4.6.*,
                        HandsomeSoup,
                        hxt,
                        lens,
-                       parallel-io
+                       async
 
   hs-source-dirs:      src

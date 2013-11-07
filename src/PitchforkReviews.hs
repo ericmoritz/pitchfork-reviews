@@ -10,7 +10,7 @@ import Control.Monad
 import Control.Lens
 import Data.Maybe (listToMaybe, fromMaybe)
 import Data.List (sortBy, filter, intercalate)
-import Control.Concurrent.ParallelIO.Global (parallelInterleaved, stopGlobalPool)
+import Control.Concurrent.Async (mapConcurrently)
 
 data Album = Album {
   _artist :: String,
@@ -55,8 +55,7 @@ setScore = set score
 
 main = do
   -- Fetch the scores concurrently using parallel-io
-  albums <- parallelInterleaved . map updateScore =<< downloadAlbums
-  stopGlobalPool
+  albums <- mapConcurrently updateScore =<< downloadAlbums
 
   -- Sort and filter the albums
   display $ sortAndFilter 7 albums

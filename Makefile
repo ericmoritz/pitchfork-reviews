@@ -1,4 +1,3 @@
 all:
-	cabal configure
-	cabal build
+	cabal-dev install
 
