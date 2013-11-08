@@ -12,11 +12,14 @@ import Data.Maybe (listToMaybe, fromMaybe)
 import Data.List (sortBy, filter, intercalate)
 import Control.Concurrent.Async (mapConcurrently)
 import System.Environment (getArgs)
+import System.IO.Unsafe (unsafeInterleaveIO)
+
 
 data Album = Album {
   _artist :: String,
   _title :: String,
   _score :: Maybe Float,
+  _pubDate :: String,
   _url :: String
   }
 makeLenses ''Album
@@ -30,24 +33,47 @@ album = proc li -> do
   artist <- (css "h1" //> getText) -< li
   title <- (css "h2" //> getText) -< li
   url <- (css "a" ! "href") -< li
-  returnA -< Album artist title Nothing $ "http://pitchfork.com" ++ url
+  pubDate <- (css "h4" //> getText) -< li
+  returnA -< Album artist title Nothing pubDate $ "http://pitchfork.com" ++ url
 
 
 albumScore :: ArrowXml a => a XmlTree (Maybe Float)
 albumScore = css "span.score" //> getText >>> arr readMaybe
 
 
-downloadAlbums :: Int -> IO [Album]
-downloadAlbums page = 
-  runX $ index_doc >>> album_li_tags >>> album
+maybeFirstTag arrow = listToMaybe `liftM` runX arrow
+
+nextPageUrl = css "span.next-container .next" ! "href"
+
+
+downloadAllAlbums :: IO [Album]
+downloadAllAlbums  =
+  downloadAllAlbums' Nothing
+  where 
+    downloadAllAlbums' currentPage = do
+      (albums, nextPage) <- downloadAlbums currentPage
+      rest <- unsafeInterleaveIO $
+              case nextPage of
+                Nothing -> return []
+                _       -> downloadAllAlbums' nextPage
+      return $ albums ++ rest
+    
+
+downloadAlbums :: Maybe String -> IO ([Album], Maybe String)
+downloadAlbums pageUrl = do
+  print $ "downloading " ++ url
+  albums <- runX $ index_doc >>> album_li_tags >>> album
+  nextPage <- maybeFirstTag $ index_doc >>> nextPageUrl
+  return (albums, liftM2 (++) (return "http://pitchfork.com") nextPage)
   where
-    index_doc = fromUrl $ "http://pitchfork.com/reviews/albums/" ++ show page ++ "/"
+    url = fromMaybe "http://pitchfork.com/reviews/albums/1/" pageUrl
+    index_doc = fromUrl url
     album_li_tags = css "ul.object-grid ul li"
 
 
 downloadScore :: Album -> IO Album
 downloadScore album = do
-  maybeScore <- (join . listToMaybe) `liftM` runX (album_doc >>> albumScore)
+  maybeScore <- return . join =<< maybeFirstTag (album_doc >>> albumScore)
   return $ setScore maybeScore album
   where
     album_doc = fromUrl $ album^.url
@@ -57,15 +83,15 @@ setScore = set score
 
 main = 
   -- download the albums
-  (downloadAlbums =<< pageOpt)
+  (liftM2 take) count downloadAllAlbums
   -- then fetch the scores for each album concurrently using async
   >>= mapConcurrently downloadScore
   -- then filter, sort and display the albums
   >>= (filter (scoreGT 7) >>> sortBy compareScore >>> display)
 
   where
-    pageOpt :: IO Int
-    pageOpt = return . fromMaybe 1 . (readMaybe <=< listToMaybe) =<< getArgs
+    count :: IO Int
+    count = return . fromMaybe 20 . (readMaybe <=< listToMaybe) =<< getArgs
 
     compareScore :: Album -> Album -> Ordering
     compareScore b a = compare (a^.score) (b^.score)
