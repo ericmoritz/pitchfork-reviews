@@ -13,7 +13,6 @@ import Data.List (sortBy, filter, intercalate)
 import Control.Concurrent.Async (mapConcurrently)
 import System.Environment (getArgs)
 
-
 data Album = Album {
   _artist :: String,
   _title :: String,
@@ -46,33 +45,33 @@ downloadAlbums page =
     album_li_tags = css "ul.object-grid ul li"
 
 
-downloadScore :: String -> IO (Maybe Float)
-downloadScore url = 
-  (join . listToMaybe) `liftM` runX (album_doc >>> albumScore) 
+downloadScore :: Album -> IO Album
+downloadScore album = do
+  maybeScore <- (join . listToMaybe) `liftM` runX (album_doc >>> albumScore)
+  return $ setScore maybeScore album
   where
-    album_doc = fromUrl url
+    album_doc = fromUrl $ album^.url
 
 setScore :: Maybe Float -> Album -> Album
 setScore = set score
 
-main = do
-  albums <- downloadAlbums =<< pageOpt
-  -- Fetch the scores concurrently using async
-  scores <- mapConcurrently downloadScoreForAlbum albums
+main = 
+  -- download the albums
+  (downloadAlbums =<< pageOpt)
+  -- then fetch the scores for each album concurrently using async
+  >>= mapConcurrently downloadScore
+  -- then filter, sort and display the albums
+  >>= (filter (scoreGT 7) >>> sortBy compareScore >>> display)
 
-  -- Join the albums with what we fetched concurrently,
-  -- filter by the minimal score and then sort on the score
-  display $ sortBy compareScore $
-    filter (scoreGT 7) $
-    zipWith setScore scores albums
   where
-    pageOpt = do
-      args <- getArgs
-      return $ fromMaybe 1 $ case args of
-        [x] -> readMaybe x
-        _   -> Nothing
-      
-    downloadScoreForAlbum a = downloadScore (a^.url)
+    pageOpt :: IO Int
+    pageOpt = return . fromMaybe 1 . (readMaybe <=< listToMaybe) =<< getArgs
+
+    compareScore :: Album -> Album -> Ordering
     compareScore b a = compare (a^.score) (b^.score)
+
+    scoreGT :: Float -> Album -> Bool
     scoreGT n a = a^.score > Just n
+
+    display :: [Album] -> IO ()
     display = mapM_ print
