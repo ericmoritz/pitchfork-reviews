@@ -21,6 +21,8 @@ executable pitchfork-reviews
                        HandsomeSoup,
                        hxt,
                        lens,
-                       async
+                       async,
+                       old-locale,
+                       time
 
   hs-source-dirs:      src

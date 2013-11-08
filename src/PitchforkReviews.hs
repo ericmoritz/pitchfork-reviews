@@ -13,13 +13,16 @@ import Data.List (sortBy, filter, intercalate)
 import Control.Concurrent.Async (mapConcurrently)
 import System.Environment (getArgs)
 import System.IO.Unsafe (unsafeInterleaveIO)
+import Data.Time.LocalTime (LocalTime)
+import Data.Time.Format (parseTime)
+import System.Locale (defaultTimeLocale)
 
 
 data Album = Album {
   _artist :: String,
   _title :: String,
   _score :: Maybe Float,
-  _pubDate :: String,
+  _pubDate :: Maybe LocalTime,
   _url :: String
   }
 makeLenses ''Album
@@ -34,12 +37,15 @@ album = proc li -> do
   title <- (css "h2" //> getText) -< li
   url <- (css "a" ! "href") -< li
   pubDate <- (css "h4" //> getText) -< li
-  returnA -< Album artist title Nothing pubDate $ "http://pitchfork.com" ++ url
-
+  returnA -< Album artist title Nothing (parsePFDate pubDate) $ "http://pitchfork.com" ++ url
+  
 
 albumScore :: ArrowXml a => a XmlTree (Maybe Float)
 albumScore = css "span.score" //> getText >>> arr readMaybe
 
+parsePFDate :: String -> Maybe LocalTime
+parsePFDate = parseTime locale "%b %e, %Y"
+  where locale = defaultTimeLocale
 
 maybeFirstTag arrow = listToMaybe `liftM` runX arrow
 
@@ -81,17 +87,28 @@ downloadScore album = do
 setScore :: Maybe Float -> Album -> Album
 setScore = set score
 
-main = 
+main = do
   -- download the albums
-  (liftM2 take) count downloadAllAlbums
+  (liftM2 takeAfter) dateArgIO downloadAllAlbums
   -- then fetch the scores for each album concurrently using async
   >>= mapConcurrently downloadScore
   -- then filter, sort and display the albums
   >>= (filter (scoreGT 7) >>> sortBy compareScore >>> display)
 
   where
-    count :: IO Int
-    count = return . fromMaybe 20 . (readMaybe <=< listToMaybe) =<< getArgs
+    takeAfter :: LocalTime -> [Album] -> [Album]
+    takeAfter dt = takeWhile (after dt)
+      
+    after :: LocalTime -> Album -> Bool
+    after dt a = (a^.pubDate >= Just dt)
+
+    dateArgIO :: IO LocalTime
+    dateArgIO =  do 
+      maybeDateStr <-  listToMaybe `liftM` getArgs
+      case maybeDateStr >>= parsePFDate of
+        Just dt -> return dt
+        Nothing -> (fail "Date not given")
+
 
     compareScore :: Album -> Album -> Ordering
     compareScore b a = compare (a^.score) (b^.score)
