@@ -57,18 +57,12 @@ function setScore(score, album) {
 }
 
 function cmp(x,y) {
-    if(x == y) { 
-	return 0;
-    } else if (x < y) {
-	return -1;
-    } else {
-	return 1;
-    }
+    return x == y ? 0 : 
+	   x > y  ? 1 : -1;
 }
 
 function display(albums) {
-    albums.forEach(function(result) {
-	var album = result.value;
+    albums.each(function(i, album) {
 	if(album['score'] > 7) {
 	    console.log(
 		    album['score']
@@ -76,6 +70,7 @@ function display(albums) {
 		    + album['artist'] 
 		    + " - " 
 		    + album['title']
+		    + " "
 		    + album['url']
 	    )
 	}
@@ -84,10 +79,10 @@ function display(albums) {
 
 function main() {
     downloadAlbums(1).then(function(albums) {
-	return Q.allSettled(
+	return Q.all(
 	    albums.map(function(i, a) { return downloadScore(a) })
 	).then(function(albums) {
-	    display(albums.sort(function(y,x) { cmp(x['value']['score'], y['value']['score']) }));
+	    display(albums.sort(function(y,x) { return cmp(x['score'], y['score']) }));
 	});
     }).fail(console.error);
 }
