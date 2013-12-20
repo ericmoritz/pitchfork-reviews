@@ -1,5 +1,5 @@
 all:
-	cabal-dev install
+	cabal install
 
 
 lint:

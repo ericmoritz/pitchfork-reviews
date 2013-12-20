@@ -26,3 +26,16 @@ executable pitchfork-reviews
                        time
 
   hs-source-dirs:      src
+
+executable pitchfork-top-50
+  main-is:             PitchforkTop50.hs
+  -- other-modules:       
+  build-depends:       base ==4.6.*,
+                       HandsomeSoup,
+                       hxt,
+                       lens,
+                       async,
+                       old-locale,
+                       time
+
+  hs-source-dirs:      src
